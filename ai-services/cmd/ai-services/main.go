@@ -4,6 +4,8 @@ import "github.com/project-ai-services/ai-services/cmd/ai-services/cmd"
 
 // ai-services completion bash|zsh|fish|powershell
 // ai-services --version
+
+// Needs implementation
 // ai-services adm controlplane --help
 // ai-services adm controlplane bootstrap
 // ai-services adm controlplane reset
