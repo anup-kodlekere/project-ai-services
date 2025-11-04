@@ -1,10 +1,5 @@
-import time
 import base64
 import regex as re
-
-from common.llm_utils import query_vllm
-from reranker_utils import rerank_documents
-
 
 def contains_chinese_regex(text):
     return bool(re.search(r'\p{Han}', text))
@@ -56,8 +51,8 @@ def show_document_content(retrieved_documents, scores):
     return html_content
 
 
-def retrieve_documents(query, emb_model, emb_endpoint, max_tokens, vectorstore, top_k, deployment_type, mode="hybrid", language='en'):
-    results = vectorstore.search(query, emb_model, emb_endpoint, max_tokens, top_k, deployment_type, mode=mode, language=language)
+def retrieve_documents(query, emb_model, emb_endpoint, max_tokens, vectorstore, top_k, mode="hybrid", language='en'):
+    results = vectorstore.search(query, emb_model, emb_endpoint, max_tokens, top_k, mode=mode, language=language)
 
     retrieved_documents = []
     scores = []
@@ -77,148 +72,3 @@ def retrieve_documents(query, emb_model, emb_endpoint, max_tokens, vectorstore, 
         scores.append(score)
 
     return retrieved_documents, scores
-
-
-def search_and_answer_dual(
-        question, llm_endpoint, llm_model, emb_model, emb_endpoint, max_tokens, reranker_model, reranker_endpoint, 
-        top_k, top_r, stop_words, language, vectorstore, deployment_type, stream
-    ):
-    
-    print(f'Query language: {language}')
-    # Perform retrieval
-    retrieval_start = time.time()
-    print("parameters")
-    print(question)
-    print(emb_model)
-    print(emb_endpoint)
-
-    retrieved_documents, scores = retrieve_documents(question, emb_model, emb_endpoint, max_tokens, vectorstore, top_k, deployment_type, 'hybrid', language)
-    print("retrieved")
-    print(retrieved_documents)
-    print("endpoint")
-    print(reranker_endpoint)
-    print(reranker_model)
-    print(question)
-    reranked = rerank_documents(question, retrieved_documents, reranker_model, reranker_endpoint)
-    
-    print("reranked")
-    print(reranked)
-    ranked_documents = []
-    ranked_scores = []
-    for i, (doc, score) in enumerate(reranked, 1):
-        ranked_documents.append(doc)
-        ranked_scores.append(score)
-        if i == top_r:
-            break
-    retrieval_end = time.time()
-    print("ranked")
-    print("-----------------------")
-    print(ranked_documents) 
-    # Prepare stop words
-    if stop_words:
-        stop_words = stop_words.strip(' ').split(',')
-        stop_words = [w.strip() for w in stop_words]
-        stop_words = list(set(stop_words) + set(['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']))
-    else:
-        stop_words = ['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']
-    
-    # Call show_document_content to format retrieved documents
-    html_content = show_document_content(ranked_documents, ranked_scores)
-    
-    # RAG Answer Generation
-    rag_answer, rag_generation_time = query_vllm(
-        question, ranked_documents, llm_endpoint, llm_model, language, stop_words, stream=stream
-    )
-    
-    # No-RAG Answer Generation
-    no_rag_answer, no_rag_generation_time = query_vllm(
-        question, [], llm_endpoint, llm_model, language, stop_words, stream=stream
-    )
-    
-    rag_text = rag_answer.get('choices', [{}])[0].get('text', 'No RAG answer generated.')
-    no_rag_text = no_rag_answer.get('choices', [{}])[0].get('text', 'No No-RAG answer generated.')
-
-    if rag_text == 'No RAG answer generated.':
-        rag_text = rag_answer.get('response', 'No RAG answer generated.')
-        no_rag_text = no_rag_answer.get('response', 'No No-RAG answer generated.')
-    
-    return (
-        f"<h3>RAG Answer (Generation Time - {rag_generation_time:.2f} seconds):</h3><p>{rag_text}</p>",
-        f"<h3>No-RAG Answer (Generation Time - {no_rag_generation_time:.2f} seconds):</h3><p>{no_rag_text}</p>",
-        f"<h3>Top Documents (Retrieval and Reranking Time - {retrieval_end - retrieval_start:.2f} seconds):</h3>{html_content}",
-    )
-
-
-def search_and_answer(
-        question, llm_endpoint, llm_model, emb_model, emb_endpoint, max_tokens, reranker_model, reranker_endpoint, 
-        top_k, top_r, use_reranker, max_new_tokens, stop_words, language, vectorstore, deployment_type, stream
-    ):
-    
-    print(f'Query language: {language}')
-    # Perform retrieval
-    retrieval_start = time.time()
-    print("parameters")
-    print(question)
-    print(emb_model)
-    print(emb_endpoint)
-
-    retrieved_documents, retrieved_scores = retrieve_documents(question, emb_model, emb_endpoint, max_tokens, vectorstore, top_k, deployment_type, 'hybrid', language)
-    print("retrieved")
-    print(retrieved_documents)
-    print("endpoint")
-    print(reranker_endpoint)
-    print(reranker_model)
-    print(question)
-
-    if use_reranker:
-        reranked = rerank_documents(question, retrieved_documents, reranker_model, reranker_endpoint)
-        
-        print("reranked")
-        print(reranked)
-        ranked_documents = []
-        ranked_scores = []
-        for i, (doc, score) in enumerate(reranked, 1):
-            ranked_documents.append(doc)
-            ranked_scores.append(score)
-            if i == top_r:
-                break
-        print("ranked")
-        print("-----------------------")
-        print(ranked_documents)
-    else:
-        ranked_documents = retrieved_documents[:top_r]
-        ranked_scores = retrieved_scores[:top_r]
-    retrieval_end = time.time()
-
-    replacement_dict = {"케": "fi", "昀": "f", "椀": "i", "氀": "l"}
-    for doc in ranked_documents:
-        if contains_chinese_regex(doc["page_content"]):
-            for key, val in replacement_dict.items():
-                doc["page_content"] = re.sub(key, val, doc["page_content"])
-
-    # Prepare stop words
-    if stop_words:
-        stop_words = stop_words.strip(' ').split(',')
-        stop_words = [w.strip() for w in stop_words]
-        stop_words = list(set(stop_words) + set(['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']))
-    else:
-        stop_words = ['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']
-    
-    # Call show_document_content to format retrieved documents
-    html_content = show_document_content(ranked_documents, ranked_scores)
-    
-    # RAG Answer Generation
-    rag_answer, rag_generation_time = query_vllm(
-        question, ranked_documents, llm_endpoint, llm_model, language, stop_words, max_new_tokens, stream=stream
-    )
-    
-    # rag_text = rag_answer.get('choices', [{}])[0].get('text', 'No RAG answer generated.')
-    rag_text = rag_answer.get('choices', [{}])[0].get('message', 'No RAG answer generated.')['content']
-
-    if rag_text == 'No RAG answer generated.':
-        rag_text = rag_answer.get('response', 'No RAG answer generated.')
-    
-    return (
-        f"<h3>RAG Answer (Generation Time - {rag_generation_time:.2f} seconds):</h3><p>{rag_text}</p>",
-        f"<h3>Top Documents (Retrieval and Reranking Time - {retrieval_end - retrieval_start:.2f} seconds):</h3>{html_content}",
-    )

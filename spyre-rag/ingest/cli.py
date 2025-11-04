@@ -12,7 +12,7 @@ from ingest.doc_utils import extract_document_data, hierarchical_chunk_with_toke
 logger = get_logger("ingest")
 
 def reset_db():
-    emb_model_dict, llm_model_dict = get_model_endpoints()
+    emb_model_dict, llm_model_dict, _ = get_model_endpoints()
     vector_store = MilvusVectorStore(emb_name=emb_model_dict["emb_model"], llm_name=llm_model_dict["llm_model"])
     collection_name = vector_store._generate_collection_name()
 
@@ -20,7 +20,7 @@ def reset_db():
     logger.info(f"Cleaned Vector DB: {collection_name}")
 
 def ingest(directory_path, include_meta_info_in_main_text):
-    emb_model_dict, llm_model_dict = get_model_endpoints()
+    emb_model_dict, llm_model_dict, _ = get_model_endpoints()
     # Initialize/reset the database before processing any files
     vector_store = MilvusVectorStore(emb_name=emb_model_dict["emb_model"], llm_name=llm_model_dict["llm_model"])
     collection_name = vector_store._generate_collection_name()

@@ -3,22 +3,17 @@ import os
 
 from flask import Flask, request, jsonify, Response, stream_with_context
 import time
-from pymilvus import connections
 from common.db_utils import MilvusVectorStore, VectorStoreManager
-from common.misc_utils import get_model_endpoints
-from backend_utils import search_and_answer_backend, search_only
+from common.misc_utils import get_model_endpoints, get_logger
+from retrieve.backend_utils import search_and_answer_backend, search_only
 from common.llm_utils import query_vllm_stream
 
-MILVUS_HOST = os.getenv("MILVUS_HOST")
-MILVUS_PORT = os.getenv("MILVUS_PORT")
-connections.connect("default", host=MILVUS_HOST, port=MILVUS_PORT)
+logger = get_logger("backend")
 
 vectorstore = None
-DEPLOYMENT_TYPE = 'spyre'
-EMB_PREFIX      = 'EMB'
-LLM_PREFIX      = 'LLM'
-RERANKER_PREFIX = 'RER'
-DB_NAME_PREFIX  = 'MLV'
+MILVUS_HOST = os.getenv("MILVUS_HOST")
+MILVUS_PORT = os.getenv("MILVUS_PORT")
+DB_NAME_PREFIX = os.getenv("MILVUS_DB_PREFIX")
 TRUNCATION      = True
 
 # Globals to be set dynamically
@@ -29,33 +24,33 @@ reranker_model_dict = {}
 # Keep track of the last used config for vectorstore
 vector_store_manager = VectorStoreManager()
 
-def initialize_models(deployment_type):
+def initialize_models():
     global emb_model_dict, llm_model_dict, reranker_model_dict
-    emb_model_dict, llm_model_dict, reranker_model_dict = get_model_endpoints(deployment_type)
+    emb_model_dict, llm_model_dict, reranker_model_dict = get_model_endpoints()
 
 def initialize_vectorstore_if_needed(db_name_prefix):
     current_config = {
-        "emb": EMB_PREFIX,
-        "llm": LLM_PREFIX,
+        "emb": emb_model_dict["emb_model"],
+        "llm": llm_model_dict["llm_model"],
         "db_prefix": db_name_prefix,
     }
 
     config_changed = current_config != vector_store_manager.last_config
 
     if vector_store_manager.vectorstore is None or config_changed:
-        print("🔄 Reinitializing vectorstore due to config change...")
+        logger.info("🔄 Reinitializing vectorstore due to config change...")
         vectorstore = MilvusVectorStore(
             host=MILVUS_HOST,
             port=MILVUS_PORT,
             db_prefix=db_name_prefix,
-            emb_name=EMB_PREFIX,
-            llm_name=LLM_PREFIX
+            emb_name=emb_model_dict["emb_model"],
+            llm_name=llm_model_dict["llm_model"]
         )
         vector_store_manager.vectorstore = vectorstore
         vector_store_manager.last_config = current_config
         return vectorstore
 
-    print("✅ Reusing existing vectorstore.")
+    logger.info("✅ Reusing existing vectorstore.")
     return vector_store_manager.vectorstore
 
 
@@ -76,7 +71,7 @@ def generate():
         emb_endpoint = emb_model_dict['emb_endpoint']
         emb_max_tokens = emb_model_dict['max_tokens']
         llm_model = llm_model_dict['llm_model']
-        llm_endpoint = llm_model_dict['llm_chat_endpoint']
+        llm_endpoint = llm_model_dict['llm_endpoint']
         reranker_model = reranker_model_dict['reranker_model']
         reranker_endpoint = reranker_model_dict['reranker_endpoint']
 
@@ -98,7 +93,6 @@ def generate():
             stop_words=stop_words,
             language="en",
             vectorstore=vectorstore,
-            deployment_type=DEPLOYMENT_TYPE,
             stream=False,
             truncation=TRUNCATION
         )
@@ -124,12 +118,11 @@ def stream():
         emb_endpoint = emb_model_dict['emb_endpoint']
         emb_max_tokens = emb_model_dict['max_tokens']
         llm_model = llm_model_dict['llm_model']
-        llm_endpoint = llm_model_dict['llm_chat_endpoint']
+        llm_endpoint = llm_model_dict['llm_endpoint']
         reranker_model = reranker_model_dict['reranker_model']
         reranker_endpoint = reranker_model_dict['reranker_endpoint']
 
         vectorstore = initialize_vectorstore_if_needed(DB_NAME_PREFIX)
-        lang = detect_en_hi(prompt)
         docs = search_only(
             prompt,
             emb_model, emb_endpoint, emb_max_tokens,
@@ -138,9 +131,7 @@ def stream():
             num_chunks_post_rrf,
             num_docs_reranker,
             use_reranker,
-            language=lang,
-            vectorstore=vectorstore,
-            deployment_type=DEPLOYMENT_TYPE,
+            vectorstore=vectorstore
         )
     except Exception as e:
         return jsonify({"error": repr(e)})
@@ -153,8 +144,7 @@ def stream():
             (set(stop_words) + set(['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']))
     else:
         stop_words = ['Context:', 'Question:', '\nContext:', '\nAnswer:', '\nQuestion:', 'Answer:']
-    return Response(stream_with_context(query_vllm_stream(prompt, docs, llm_endpoint, llm_model, lang, stop_words,
-                                                          max_tokens, True, dynamic_chunk_truncation=TRUNCATION)),
+    return Response(stream_with_context(query_vllm_stream(prompt, docs, llm_endpoint, llm_model, stop_words,max_tokens, True, dynamic_chunk_truncation=TRUNCATION)),
                     content_type='text/plain',
                     mimetype='text/event-stream', headers={
             'Cache-Control': 'no-cache',
@@ -181,7 +171,6 @@ def get_reference_docs():
         reranker_endpoint = reranker_model_dict['reranker_endpoint']
 
         vectorstore = initialize_vectorstore_if_needed(DB_NAME_PREFIX)
-        lang = detect_en_hi(prompt)
         docs = search_only(
             prompt,
             emb_model, emb_endpoint, emb_max_tokens,
@@ -190,9 +179,8 @@ def get_reference_docs():
             num_chunks_post_rrf,
             num_docs_reranker,
             use_reranker,
-            language=lang,
-            vectorstore=vectorstore,
-            deployment_type=DEPLOYMENT_TYPE,
+            language="en",
+            vectorstore=vectorstore
         )
     except Exception as e:
         return jsonify({"error": repr(e)})
@@ -202,5 +190,5 @@ def get_reference_docs():
     )
 
 if __name__ == "__main__":
-    initialize_models("spyre")
-    app.run(host="0.0.0.0", port=8001)
+    initialize_models()
+    app.run(host="0.0.0.0", port=5000)

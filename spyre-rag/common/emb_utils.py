@@ -1,6 +1,9 @@
 import json
 import requests
 import numpy as np
+from misc_utils import get_logger
+
+logger = get_logger("embed")
 
 class FastAPIEmbeddingFunction:
     def __init__(self, emb_model, emb_endpoint, max_tokens):
@@ -35,8 +38,8 @@ class FastAPIEmbeddingFunction:
             embeddings = [data['embedding'] for data in r['data']]
             return [np.array(embed, dtype=np.float32) for embed in embeddings]
         except requests.exceptions.RequestException as e:
-            print(f"Error in _call_fastapi_embedding: {e}, {e.response.text}")
+            logger.error(f"Error in _call_fastapi_embedding: {e}, {e.response.text}")
             raise e
         except Exception as e:
-            print(f"Error in _call_fastapi_embedding: {e}")
+            logger.error(f"Error in _call_fastapi_embedding: {e}")
             raise e

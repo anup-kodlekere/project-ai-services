@@ -1,7 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from common.misc_utils import get_logger
 from typing import List, Tuple
 from cohere import ClientV2
 
+logger = get_logger("reranker")
 
 def rerank_helper(co2_client: ClientV2, query: str, document: List[dict], model: str) -> Tuple[List[dict], float]:
     """
@@ -18,7 +20,7 @@ def rerank_helper(co2_client: ClientV2, query: str, document: List[dict], model:
         score = result.results[0].relevance_score
         return document, score
     except Exception as e:
-        print(f"[Rerank Error] {e}")
+        logger.error(f"[Rerank Error] {e}")
         return document, 0.0
 
 
@@ -49,7 +51,7 @@ def rerank_documents(
             try:
                 reranked.append(future.result())
             except Exception as e:
-                print(f"[Thread Error] {e}")
+                logger.error(f"[Thread Error] {e}")
                 reranked.append((doc, 0.0))
 
     return sorted(reranked, key=lambda x: x[1], reverse=True)
@@ -67,5 +69,5 @@ if __name__ == "__main__":
     ranked_docs = rerank_documents(query, docs)
 
     for i, (doc, score) in enumerate(ranked_docs, 1):
-        print(f"{i}. [Score: {score:.4f}] {doc.page_content} (Source: {doc.metadata.get('source')})")
+        logger.info(f"{i}. [Score: {score:.4f}] {doc.page_content} (Source: {doc.metadata.get('source')})")
 

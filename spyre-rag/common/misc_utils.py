@@ -28,13 +28,17 @@ def get_logger(name):
     return logger
 
 def get_prompts():
-    prompts_path = os.getenv("PROMPT_PATH")
-
-    if not prompts_path:
-        raise EnvironmentError("Environment variable 'PROMPT_PATH' is not set.")
+       
+    env_path = os.getenv("PROMPT_PATH")
+    if env_path and os.path.exists(env_path):
+        prompt_path = env_path
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(base_dir, "..", "prompts.json")
+        prompt_path = os.path.normpath(prompt_path)
 
     try:
-        with open(prompts_path, "r", encoding="utf-8") as file:
+        with open(prompt_path, "r", encoding="utf-8") as file:
             data = json.load(file)
 
             llm_classify = data.get("llm_classify")
@@ -50,13 +54,13 @@ def get_prompts():
                     query_vllm_stream,
                     gen_qa_pairs,
             )):
-                raise ValueError(f"One or more prompt variables are missing or empty in '{prompts_path}' file.")
+                raise ValueError(f"One or more prompt variables are missing or empty in '{prompt_path}' file.")
 
             return llm_classify, table_summary, query_vllm, query_vllm_stream, gen_qa_pairs
     except FileNotFoundError:
-        raise FileNotFoundError(f"JSON file not found at: {prompts_path}")
+        raise FileNotFoundError(f"JSON file not found at: {prompt_path}")
     except json.JSONDecodeError as e:
-        raise ValueError(f"Error parsing JSON at {prompts_path}: {e}")
+        raise ValueError(f"Error parsing JSON at {prompt_path}: {e}")
 
 
 def get_txt_tab_filenames(file_paths, out_path):
@@ -81,4 +85,9 @@ def get_model_endpoints():
         'llm_model':    os.getenv("LLM_MODEL"),
     }
 
-    return emb_model_dict, llm_model_dict
+    reranker_model_dict = {
+            'reranker_endpoint': os.getenv("RERANKER_ENDPOINT"),
+            'reranker_model':    os.getenv("RERANKER_MODEL"),
+        }
+
+    return emb_model_dict, llm_model_dict, reranker_model_dict

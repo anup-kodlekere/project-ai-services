@@ -5,5 +5,6 @@ WORKDIR /opt/rag
 COPY common .
 COPY ingest .
 COPY retrive .
+COPY prompts.json .
 
 ENTRYPOINT [ "sleep", "infinity" ]
