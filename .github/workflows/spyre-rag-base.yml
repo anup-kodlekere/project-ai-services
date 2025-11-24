@@ -1,8 +1,7 @@
 name: RAG Base
 on:
+  workflow_dispatch:
   push:
-    paths:
-      - 'images/rag-base/**'
     branches:
       - main
   pull_request:
