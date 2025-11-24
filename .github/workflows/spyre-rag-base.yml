@@ -18,7 +18,7 @@ env:
 jobs:
   build-publish-image:
     name: Build and Publish Image
-    runs-on: ubuntu-24.04-ppc64le-p10
+    runs-on: ubuntu-24.04-ppc64le-4xlarge
 
     steps:
       - name: Checkout code
@@ -29,8 +29,8 @@ jobs:
         run: |
           make build REGISTRY=${{ env.ICR_REGISTRY }}/${{ env.ICR_NAMESPACE }}
 
-      - name: Publish rag-base image
-        working-directory: images/rag-base
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          make push REGISTRY=${{ env.ICR_REGISTRY }}/${{ env.ICR_NAMESPACE }} REGISTRY_USER=${{ secrets.ICR_USERNAME }} REGISTRY_PASSWORD=${{ secrets.ICR_APIKEY }}
+      # - name: Publish rag-base image
+      #   working-directory: images/rag-base
+      #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      #   run: |
+      #     make push REGISTRY=${{ env.ICR_REGISTRY }}/${{ env.ICR_NAMESPACE }} REGISTRY_USER=${{ secrets.ICR_USERNAME }} REGISTRY_PASSWORD=${{ secrets.ICR_APIKEY }}
